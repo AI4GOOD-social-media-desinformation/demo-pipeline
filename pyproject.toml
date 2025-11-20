@@ -1,0 +1,20 @@
+[project]
+name = "demo-pipeline"
+version = "0.1.0"
+description = "The goal of this repo is to quickly create and evaluate modules in different pipeline setups"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [
+    {name = "AI4GOOD Social Media Disinformation Team"}
+]
+
+[project.urls]
+Repository = "https://github.com/AI4GOOD-social-media-desinformation/demo-pipeline"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src", "src.dataloaders", "src.modules", "src.pipelines"]

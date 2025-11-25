@@ -9,6 +9,12 @@ authors = [
     {name = "AI4GOOD Social Media Disinformation Team"}
 ]
 
+dependencies = [
+    "polars==1.35.2",
+    "jupyterlab==4.5.0",
+    "instaloader==4.15"
+]
+
 [project.urls]
 Repository = "https://github.com/AI4GOOD-social-media-desinformation/demo-pipeline"
 

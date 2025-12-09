@@ -19,17 +19,14 @@ class InMemoryEventBus:
         """Publishes an event to a topic, triggering all handlers."""
         print(f"--- Event Published: TOPIC='{topic}' ---")
         
-        # In a Saga, you would include metadata like 'saga_id' in event_data
         
         if topic in self._subscriptions:
             for handler in self._subscriptions[topic]:
-                # Handlers are called synchronously and immediately
                 try:
                     print(f"  -> Delivering to handler: {handler.__name__}")
                     handler(event_data)
                 except Exception as e:
-                    # Crucial for Saga: If a handler fails, log it and decide on compensation
-                    print(f"  !! Handler '{handler.__name__}' failed with error: {e}")
+                   print(f"  !! Handler '{handler.__name__}' failed with error: {e}")
         else:
             print(f"  -> No subscribers for topic: {topic}")
 

@@ -1,24 +1,28 @@
 
 from src.eventbus.InMemoryEventBus import InMemoryEventBus
-from src.storage.LoadDatasetFirestore import LocalDatasetFirestore
+from src.storage.LoaderDatasetFirestore import LocalDatasetFirestore
+from src.modules.GeminiClaimExtraction import GeminiClaimExtraction
 import asyncio
 
 
 class DatasetCloudPipeline:
     """
-    Pipeline to upload datasets to GCP Cloud SQL with event bus integration.
+    Pipeline to upload datasets to Firestore with event bus integration.
     """
     def __init__(self, data_dir: str):
         # Initialize Event Bus
         self.event_bus = InMemoryEventBus()
         self.storage_service = LocalDatasetFirestore(data_dir=data_dir)
+        self.claim_extraction_module = GeminiClaimExtraction()
         self.add_storage_event_subscriptions()
+        self.claim_extraction_module.set_eventbus(self.event_bus)
 
     
     def add_storage_event_subscriptions(self):
         """Subscribe event handlers to the event bus."""
         handlers = {
-            "dataset.upload_completed": self.storage_service.on_upload_completed,
+            "claim_extraction.completed": self.claim_extraction_module.on_claim_extraction_completed,
+            "dataset.upload_completed": self.claim_extraction_module.run,
             "dataset.upload_failed": self.storage_service.on_upload_failed,
         }
         
@@ -28,11 +32,11 @@ class DatasetCloudPipeline:
     def run(self, id: str):
 
         """
-        For a certain ID of a local dutaset start the upload to GCP Cloud SQL.
+        For a certain ID of a local dutaset start the upload to Firestore.
         """
 
         print("\n" + "="*70)
-        print("DATASET CLOUD PIPELINE: Upload Dataset to GCP Cloud SQL")
+        print("DATASET CLOUD PIPELINE: Upload Dataset to Firestore")
         print("="*70 + "\n")
         
         
@@ -41,6 +45,14 @@ class DatasetCloudPipeline:
         response =  self.storage_service.upload(id=id)
         if response["response"] is not None:
             print(f"Pipeline completed successfully for dataset ID: {id}")
+            self.event_bus.publish("dataset.upload_completed", {"id": response["id"], "data": response["data"]})
+            
         else:
             print(f"Pipeline failed for dataset ID: {id}")
             self.event_bus.publish("dataset.upload_failed", {"id": response["id"]})
+        
+        self.storage_service.close()
+
+
+
+            

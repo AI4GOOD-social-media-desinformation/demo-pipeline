@@ -63,13 +63,11 @@ class LocalDatasetFirestore:
         
 
         response = self.db.collection('requests').document(firestore_id).set(obj.__dict__)
-        return {"response": response, "id": firestore_id, "data": obj}
+        return {"response": response, "id": firestore_id, "data": obj.__dict__}
     
-    def on_upload_completed(self, event_data: dict):
-
-        """Handler for upload completed event."""
-        print(f"Upload completed for dataset ID: {event_data['id']}")
-        obj = self.db.collection('dataset_samples').document(event_data['id']).get()
+    def close(self):
+        """Closes the Firestore client."""
+        self.db.close()
 
 
     def on_upload_failed(self, event_data: dict):

@@ -126,3 +126,16 @@ To run examples with your own video data:
 - **Firebase Credentials Error**: Run `gcloud auth application-default login` and ensure your GCP project is configured
 - **Video Not Found**: Verify that video files exist in the correct directory structure
 - **Firestore Connection Error**: Check that your GCP project has Firestore enabled
+
+## Cloudflared tunneling
+
+Expose the local service through Cloudflare Tunnel to the public endpoint https://ehfake.caiorhoden-apps.work/.
+
+1. Install the Cloudflare CLI (Linux example): `sudo apt-get update && sudo apt-get install cloudflared`
+2. Set the tunnel token environment variable (store securely, e.g., in your shell profile or secret manager): `export CLOUDFARE_TUNNELING_TOKEN=<tunnel_token>`
+3. Start the tunnel (runs until interrupted): `cloudflared tunnel run --token $CLOUDFARE_TUNNELING_TOKEN`
+4. Keep your app running locally (e.g., `flask run`) so the tunnel can forward traffic to it.
+
+Notes:
+- The token is provided by Cloudflare when you create the tunnel; rotate it if compromised.
+- The command above uses the token-based mode (no local config file required).

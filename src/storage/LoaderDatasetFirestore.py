@@ -13,7 +13,6 @@ class LocalDatasetFirestore:
 
 
         # Application Default credentials are automatically created.
-        app = firebase_admin.initialize_app()
         self.db = firestore.Client(project="gen-lang-client-0915299548", database="ai4good")
 
         self.data_dir = data_dir

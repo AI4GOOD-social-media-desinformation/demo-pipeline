@@ -32,6 +32,70 @@ This will install the required dependencies and the package in editable mode.
 - `config.py`: Configuration settings
 - `pyproject.toml`: Project metadata and dependencies
 
+## API Endpoints
+
+The Flask application provides the following endpoints:
+
+### `GET /`
+- **Purpose**: Home/health check endpoint
+- **Returns**: Simple "Hello, World!" message
+
+### `GET /privacy-policy`
+- **Purpose**: Renders privacy policy page
+- **Returns**: HTML content from `templates/privacy_policy.html`
+
+### `GET /webhook`
+- **Purpose**: Instagram webhook verification
+- **Query Parameters**:
+  - `hub.mode`: Should be `subscribe`
+  - `hub.verify_token`: Must match `INSTAGRAM_VERIFY_TOKEN` environment variable
+  - `hub.challenge`: Challenge string to echo back
+- **Returns**: Challenge string if token matches, otherwise "Forbidden"
+- **Used by**: Instagram to verify webhook subscription during setup
+
+### `POST /webhook`
+- **Purpose**: Receives Instagram Direct Message webhook events
+- **Behavior**:
+  - Validates event is from Instagram
+  - Extracts messaging events with video attachments
+  - Skips echo messages and messages without attachments
+  - Extracts sender ID, video URL, reel ID, and video title
+  - Prevents duplicate processing using message ID (idempotency)
+  - Saves event to Firestore database
+  - Runs DirectMessagePipeline asynchronously in background thread
+  - Returns immediate 200 response to Instagram
+- **See**: [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) for detailed webhook configuration and payload structure
+
+### `POST /test`
+- **Purpose**: Debug endpoint for testing webhook payloads
+- **Behavior**: Echoes received JSON to console, returns success response
+- **Returns**: `{"message": "Test received successfully", "data": <received_data>}`
+- **Useful for**: Testing webhook payload structure without triggering full pipeline
+
+### `POST /testPipeline`
+- **Purpose**: Manual pipeline testing endpoint
+- **Behavior**: Runs DatasetCloudPipeline on hardcoded video ID `C5tBt-0IEEy`
+- **Returns**: `{"message": "Pipeline request received successfully"}`
+- **Note**: For testing only; modify the code to test different videos
+
+## Running the Flask Server
+
+Start the Flask application:
+
+```bash
+python app.py
+```
+
+The server runs on `http://localhost:5000`
+
+To expose it publicly for Instagram webhooks, use Cloudflare Tunnel:
+
+```bash
+cloudflared tunnel --url http://localhost:5000
+```
+
+This will provide a public HTTPS URL to configure in the Instagram Developer Console.
+
 ## Running Examples
 
 This project includes example scripts demonstrating how to use the pipeline modules. All examples are located in the `examples/` directory.

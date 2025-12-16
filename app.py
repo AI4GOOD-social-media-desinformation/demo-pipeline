@@ -1,53 +1,66 @@
 import os
 import threading
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
-from src.pipelines.DatasetCloudPipeline import DatasetCloudPipeline
+from src.utils.dataclasses import FirestoreObject
+import firebase_admin
+from firebase_admin import firestore
+import uuid
 
-# Import the Instagram pipeline
-from src.pipelines.InstagramWebhookPipeline import InstagramWebhookPipeline
-
+# Import the DM  Pipeline
+from src.pipelines.DirectMessagePipeline import DirectMessagePipeline
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 
 # Configuration
-VERIFY_TOKEN = os.getenv("INSTAGRAM_VERIFY_TOKEN", "my_secure_verify_token")
-INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN")
+INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_VERIFY_TOKEN")
+INSTAGRAM_VERIFY_TOKEN = os.getenv("INSTAGRAM_VERIFY_TOKEN")
+
+firebase_admin.initialize_app()
+pipeline = DirectMessagePipeline(saving_dir="data/requests")
 
 
-def run_pipeline_task(permalink):
+def save_event_to_firestore(sender_id, url, reel_video_id, text, doc_id=None):
     """
-    Wrapper to run the pipeline in a separate thread to avoid 
-    blocking the webhook response.
-    """
-    try:
-        print(f"Starting pipeline for: {permalink}")
-        # Initialize and run the Instagram pipeline
-        pipeline = InstagramWebhookPipeline(permalink)
-        pipeline.run()
-        print(f"Pipeline finished for: {permalink}")
-    except Exception as e:
-        print(f"Pipeline error: {e}")
-
-
-def get_permalink_from_id(media_id, access_token):
-    """
-    Fetch the permalink from Instagram Graph API using media_id.
-    """
-    import requests
+    Saves the Instagram webhook event data to Firestore.
     
-    url = f"https://graph.facebook.com/v18.0/{media_id}?fields=permalink&access_token={access_token}"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            return response.json().get('permalink')
-        else:
-            print(f"Error fetching permalink: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"Exception fetching permalink: {e}")
-    return None
+    Args:
+        sender_id: The Instagram user ID who sent the message
+        url: The URL of the shared video
+        reel_video_id: The Instagram reel video ID
+        text: The title/text of the video
+    
+    Returns:
+        request_id: The UUID of the created Firestore document
+    """
+    event_data = FirestoreObject(
+        userId=sender_id,
+        videoUrl=url,
+        videoId=reel_video_id,
+        videoPath="",
+        videoText=text,
+        claim="",
+        context="",
+        message=""
+    )
+
+    db = firestore.Client(project="gen-lang-client-0915299548", database="ai4good")
+    request_id = doc_id or str(uuid.uuid4())
+    doc_ref = db.collection("requests").document(request_id)
+
+    # Idempotency: skip if this request was already processed.
+    if doc_ref.get().exists:
+        print(f"Request {request_id} already exists; skipping pipeline run.")
+        db.close()
+        return None
+
+    doc_ref.set(event_data.__dict__)
+    event_data = {"id": request_id, "data": event_data.__dict__}
+    db.close()
+    
+    return event_data
 
 
 @app.route("/")
@@ -55,61 +68,78 @@ def hello_world():
     return "<p>Hello, World!</p>"
 
 
-@app.route('/webhook', methods=['GET'])
-def verify_webhook():
-    """
-    Verifies the webhook subscription.
-    Instagram sends a GET request with a challenge string.
-    """
-    mode = request.args.get('hub.mode')
-    token = request.args.get('hub.verify_token')
-    challenge = request.args.get('hub.challenge')
+@app.route('/privacy-policy')
+def privacy_policy():
+    """Renders the privacy policy page."""
+    return render_template('privacy_policy.html')
 
-    if mode == 'subscribe' and token == VERIFY_TOKEN:
-        print("Webhook verified successfully!")
-        return challenge, 200
-    
-    print("Webhook verification failed!")
-    return 'Forbidden', 403
-
-
-@app.route('/webhook', methods=['POST'])
+@app.route('/webhook', methods=['POST', 'GET'])
 def receive_webhook():
     """
     Receives the webhook payload.
     Extracts the permalink and triggers the local pipeline.
     """
-    data = request.json
-    print(f"Received webhook payload: {data}")
-    return jsonify({'message': 'Webhook received successfully'}), 200
-    
-    # Check if this is an object from Instagram
-    # if data.get('object') == 'instagram':
-    #     for entry in data.get('entry', []):
-    #         for change in entry.get('changes', []):
-    #             # The payload structure depends on the subscription field
-    #             value = change.get('value', {})
-                
-    #             # Try to get permalink directly
-    #             permalink = value.get('permalink_url') or value.get('permalink')
-                
-    #             # If no permalink, try to get media_id and fetch it
-    #             if not permalink:
-    #                 media_id = value.get('media_id') or value.get('id')
-    #                 if media_id and INSTAGRAM_ACCESS_TOKEN:
-    #                     permalink = get_permalink_from_id(media_id, INSTAGRAM_ACCESS_TOKEN)
-                
-    #             if permalink:
-    #                 print(f"Processing permalink: {permalink}")
-    #                 # Run processing asynchronously so we can return 200 OK immediately
-    #                 thread = threading.Thread(target=run_pipeline_task, args=(permalink,))
-    #                 thread.start()
-    #             else:
-    #                 print("No permalink found in webhook payload")
 
-    #     return 'EVENT_RECEIVED', 200
+    # 1. Verification Logic (GET)
+    if request.method == 'GET':
+        mode = request.args.get('hub.mode')
+        token = request.args.get('hub.verify_token')
+        challenge = request.args.get('hub.challenge')
+
+        if mode == 'subscribe' and token == INSTAGRAM_VERIFY_TOKEN:
+            return challenge, 200
+        return 'Forbidden', 403
     
-    # return 'Not Found', 404
+    else:  # 2. Event Handling Logic (POST)
+        print("Received POST webhook event")
+        data = request.json
+        # Verify it is an Instagram event
+        if data.get('object') == 'instagram':
+            
+            for entry in data.get('entry', []):
+                # Handle messaging events (DMs)
+                for message_event in entry.get('messaging', []):
+                    if 'message' not in message_event:
+                        continue
+
+                    message = message_event.get('message', {})
+                    if message.get('is_echo'):
+                        continue  # Skip echoes sent by Instagram
+
+                    sender_id = message_event.get('sender', {}).get('id')
+                    attachments = message.get('attachments') or []
+                    if not attachments:
+                        print("No attachments found in the message; skipping.")
+                        continue
+
+                    url = None
+                    reel_video_id = None
+                    text = ''
+                    for attachment in attachments:
+                        payload = attachment.get('payload', {})
+                        url = payload.get('url')
+                        reel_video_id = payload.get('reel_video_id')
+                        text = payload.get('title', '')
+                        break  # Only process the first attachment
+
+                    if not url:
+                        print("Attachment payload missing url; skipping event.")
+                        continue
+
+                    # Use stable IDs to prevent duplicate processing for the same reel/message.
+                    request_id = message.get('mid') or reel_video_id or str(uuid.uuid4())
+                    event_data = save_event_to_firestore(sender_id, url, reel_video_id, text, doc_id=request_id)
+                    if not event_data:
+                        continue
+
+                    # Run heavy pipeline work off the request thread so webhook responds fast.
+                    threading.Thread(target=pipeline.run, args=(event_data,), daemon=True).start()
+
+            return 'EVENT_RECEIVED', 200
+        
+        return 'Not Found', 404
+    
+  
 
 @app.route("/testPipeline", methods=['POST'])
 def test_pipeline():
@@ -139,8 +169,6 @@ if __name__ == '__main__':
     print("="*70)
     print("Instagram Webhook Receiver")
     print("="*70)
-    print(f"Verify Token: {VERIFY_TOKEN}")
-    print(f"Access Token Configured: {'Yes' if INSTAGRAM_ACCESS_TOKEN else 'No'}")
     print("Starting Flask server on port 5000...")
     print("="*70)
     

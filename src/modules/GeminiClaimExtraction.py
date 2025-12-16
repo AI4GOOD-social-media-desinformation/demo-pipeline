@@ -3,7 +3,6 @@ from google.genai import types
 from src.utils.dataclasses import FirestoreObject
 from src.eventbus.InMemoryEventBus import InMemoryEventBus
 
-import uuid
 import firebase_admin
 from firebase_admin import firestore
 import os
@@ -26,12 +25,6 @@ class GeminiClaimExtraction:
             project_id: GCP project ID for Firestore
             database: Firestore database name
         """
-        try:
-            firebase_admin.initialize_app()
-        except ValueError:
-            # App already initialized
-            pass
-        
         self.db = firestore.Client(project=project_id, database=database)
         self.client = genai.Client(api_key=GOOGLE_API_KEY)
         self.model = "gemini-2.5-flash"
@@ -207,6 +200,7 @@ class GeminiClaimExtraction:
         """
 
         self.sanity_check_event_data(event_data)
+        print(f"DEBUG: Event Data at GeminiClaimExtraction: {event_data}")
 
         # Set default prompts if not provided
         summarization_prompt = """
@@ -225,7 +219,6 @@ class GeminiClaimExtraction:
         
         # Step 2: Extract claim and summary
         analysis_results = self.extract_claim(video_file, summarization_prompt, claim_prompt)
-        print()
         
         # Step 3: Create Firestore object
         
@@ -248,7 +241,7 @@ class GeminiClaimExtraction:
             self.eventbus.publish("claim_extraction.failed", {"id": event_data["id"], "error": "Firestore save error"})
 
         # Step 5: Publish success event
-        self.eventbus.publish("claim_extraction.completed", {"id": firestore_id, "data": firestore_obj.__dict__})
+        self.eventbus.publish("claim_extraction.completed", {"id": event_data["id"], "data": firestore_obj.__dict__})
         
 
 

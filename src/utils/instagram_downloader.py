@@ -20,6 +20,20 @@ if __name__ == "__main__":
 """
 
 class InstagramDownloader:
+    """
+    InstagramDownloader
+
+    A utility class for downloading Instagram content using Instaloader
+    and converting the downloaded files into structured records.
+
+    Supported content types:
+    - Posts
+    - Reels
+    - IGTV videos
+
+    Each Instagram URL is processed independently and stored
+    in a dedicated directory named after its Instagram ID.
+    """
 
     def __init__(self, base_download_path: str):
         self.base_download_path = os.path.abspath(base_download_path)

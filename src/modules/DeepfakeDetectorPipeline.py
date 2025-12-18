@@ -1,15 +1,17 @@
 import os
-import subprocess
 import torch
 import librosa
 import moviepy.editor as mp
-import numpy as np
+import uuid
 from transformers import (
     Wav2Vec2FeatureExtractor,
     AutoModelForAudioClassification
 )
 
 from src.utils.video_detector import VideoDeepfakeDetector
+from src.utils.dataclasses import FirestoreObject
+from src.eventbus.InMemoryEventBus import InMemoryEventBus
+from firebase_admin import firestore
 
 """
 Usage example:
@@ -36,8 +38,10 @@ class DeepfakeDetectorPipeline:
     video probabilities.
     """
 
-    def __init__(self):
+    def __init__(self, video_model_path: str = "src/models/best_model-v3.pt", project_id: str = "gen-lang-client-0915299548", database: str = "ai4good", eventbus: InMemoryEventBus | None = None):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.db = firestore.Client(project=project_id, database=database)
+        self.eventbus = eventbus
 
         self.audio_model_name = "Hemgg/Deepfake-audio-detection"
         self.audio_processor = Wav2Vec2FeatureExtractor.from_pretrained(
@@ -48,19 +52,21 @@ class DeepfakeDetectorPipeline:
         ).to(self.device)
 
         self.video_detector = VideoDeepfakeDetector(
-            model_path="best_model-v3.pt",
+            model_path=video_model_path,
             num_frames=100
         )
 
         print("Audio + Video models loaded")
 
-    def _extract_audio(self, video_path, audio_output="temp_audio.wav"):
+    def set_eventbus(self, eventbus: InMemoryEventBus):
+        self.eventbus = eventbus
+
+    def _extract_audio(self, video_path, audio_path):
         try:
             video = mp.VideoFileClip(video_path)
             if video.audio is None:
                 return None
-            video.audio.write_audiofile(audio_output, verbose=False, logger=None)
-            return audio_output
+            video.audio.write_audiofile(audio_path, verbose=False, logger=None)
         except Exception as e:
             print(f"Audio extraction error: {e}")
             return None
@@ -93,38 +99,62 @@ class DeepfakeDetectorPipeline:
         return self.video_detector.predict(video_path)
 
 
-    def predict(self, video_path, method="audio+video"):
-        if not os.path.exists(video_path):
-            return {"error": "File not found"}
+    def run(self, event_data, method: str = "audio+video"):
+        try:
+            video_path = event_data.get("data", {}).get("videoPath", "")
+            request_id = event_data.get("id", str(uuid.uuid4()))
 
-        audio_file = self._extract_audio(video_path)
-        audio_prob, audio_msg = self._process_audio(audio_file)
+            audio_path = f"data/audio_requests/{request_id}.wav"
+            if not os.path.exists(video_path):
+                err = {"id": request_id, "error": "File not found", "data": event_data.get("data", {})}
+                if self.eventbus:
+                    self.eventbus.publish("deepfake_detection.failed", err)
+                return err
 
-        if audio_file and os.path.exists(audio_file):
-            os.remove(audio_file)
+            self._extract_audio(video_path, audio_path)
+            audio_prob, _ = self._process_audio(audio_path)
+            video_prob, _ = self._process_video(video_path)
 
-        video_prob, video_msg = self._process_video(video_path)
+            firestore_object = FirestoreObject(
+                userId=event_data.get("data", {}).get("userId", ""),
+                videoUrl=event_data.get("data", {}).get("videoUrl", ""),
+                videoId=event_data.get("data", {}).get("videoId", ""),
+                videoPath=video_path,
+                videoText=event_data.get("data", {}).get("videoText", ""),
+                claim=event_data.get("data", {}).get("claim", ""),
+                context=event_data.get("data", {}).get("context", ""),
+                analysisMessage=event_data.get("data", {}).get("analysisMessage", []),
+                newsMessage=event_data.get("data", {}).get("newsMessage", []),
+                probVideoFake=video_prob,
+                probAudioFake=audio_prob
+            )
 
-        combined_score = (video_prob * 0.6) + (audio_prob * 0.4)
+            # Update only probability fields in Firestore for the existing document
+            try:
+                self.db.collection('requests').document(request_id).update({
+                    "probVideoFake": video_prob,
+                    "probAudioFake": audio_prob
+                })
+            except Exception as e:
+                print(f"Error updating Firestore with ID: {request_id}, error: {e}")
+                if self.eventbus:
+                    self.eventbus.publish("deepfake_detection.failed", {
+                        "id": request_id,
+                        "error": "Firestore update error",
+                        "data": firestore_object.__dict__
+                    })
+                return {"id": request_id, "error": "Firestore update error"}
 
-        if video_prob >= 0.8:
-            verdict = "FAKE"
-        elif combined_score >= 0.8:
-            verdict = "FAKE"
-        elif combined_score >= 0.4:
-            verdict = "INCONCLUSIVE"
-        else:
-            verdict = "REAL"
-
-        return {
-            "video_path": video_path,
-            "audio_fake_prob": round(audio_prob, 4),
-            "video_fake_prob": round(video_prob, 4),
-            "combined_fake_prob": round(combined_score, 4),
-            "verdict": verdict,
-            "details": {
-                "audio_status": audio_msg,
-                "video_status": video_msg,
-                "method": method
-            }
-        }
+            out_event = {"id": request_id, "data": firestore_object.__dict__}
+            if self.eventbus:
+                self.eventbus.publish("deepfake_detection.completed", out_event)
+            return out_event
+        except Exception as e:
+            print(f"Deepfake detection unexpected error: {e}")
+            if self.eventbus:
+                self.eventbus.publish("deepfake_detection.failed", {
+                    "id": event_data.get("id", "unknown"),
+                    "error": str(e)
+                })
+            return None
+     

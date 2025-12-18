@@ -18,7 +18,10 @@ if __name__ == "__main__":
         "Lula aprova um novo decreto que reduz preço nos alimentos"
     )
 
-    results = matcher.fetch_news(sentence)
+    results = matcher.fetch_news(query)
+    reuslts -> [ 
+        {"title": "...", "url": "...", "source": "...", "score": 0.87},
+    ]
 """
 
 class NewsMatcher:
@@ -58,10 +61,11 @@ class NewsMatcher:
     def __init__(
         self,
         newsapi_key="5a96668439fd4ad1b8136646d029a157",
-        max_results=20,
-        top_n=3,
-        similarity_threshold=0.001,
-        recency_days=None
+        max_results=5,
+        top_n=2,
+        similarity_threshold=0.0001,
+        recency_days=None,
+        
     ):
         self.max_results = max_results
         self.top_n = top_n
@@ -80,6 +84,17 @@ class NewsMatcher:
 
         self.newsapi = NewsApiClient(api_key=newsapi_key)
 
+    def sanity_check_event_data(self, data: dict) -> None:
+        required_fields = ["id", "data"]
+        for field in required_fields:
+            if field not in data:
+                raise ValueError(f"Missing required field in event data: {field}")
+        if "claim" not in data["data"]:
+            raise ValueError("Missing required field in event data['data']: claim")
+        # Ensure event bus is set before running
+        if not getattr(self, "eventbus", None):
+            raise ValueError("EventBus not set. Call set_eventbus() before run().")
+
     @staticmethod
     def _normalize(text):
         text = text.lower()
@@ -91,15 +106,16 @@ class NewsMatcher:
         sentences = re.split(r"[.!?]\s+", text.strip())
         return [s for s in sentences if len(s) > 10]
 
-    @classmethod
-    def _extract_keywords(cls, text):
-        words = cls._normalize(text).split()
-        keywords = [
-            w for w in words
-            if w not in cls.PT_STOPWORDS and len(w) > 3
-        ]
-        return " ".join(keywords[:5])
+    def _extract_keywords(self, text):
 
+        propmpt = f"Transforme o seguinte texto em uma lista de três palavras-chave separadas por ' ':\n\n {text}."
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=[propmpt]
+        )
+        print(f"DEBUG: Keywords response: {response.text}")
+        return response.text
+        
 
     @classmethod
     def _split_user_sentence(cls, text):
@@ -168,54 +184,40 @@ class NewsMatcher:
         return similarities.max()
 
 
-    def fetch_news(self, input_sentence):
+    def run(self, query: str) -> list[dict]:
         """
         Returns a list of similar news articles.
         Returns empty list if nothing is relevant enough.
         """
 
-        candidate_inputs = self._split_user_sentence(input_sentence)
-        if not candidate_inputs:
-            return []
-
-        search_query = self._extract_keywords(input_sentence)
-        if not search_query:
-            return []
+        # Validate incoming event and environment
 
         results = []
+        for article in self._fetch_gnews(query):
+            score = self._score_article(
+                query,
+                article.get("title", ""),
+                article.get("description", "")
+            )
 
-        for article in self._fetch_gnews(search_query):
-            best_score = 0.0
-            for candidate in candidate_inputs:
-                score = self._score_article(
-                    candidate,
-                    article.get("title", ""),
-                    article.get("description", "")
-                )
-                best_score = max(best_score, score)
-
-            if best_score >= self.similarity_threshold:
+            if score >= self.similarity_threshold:
                 results.append({
                     "source": "GNews",
-                    "score": float(best_score),
+                    "score": float(score),
                     "title": article["title"],
                     "url": article["url"]
                 })
+        for article in self._fetch_newsapi(query):
+            score = self._score_article(
+                query,
+                article.get("title", ""),
+                article.get("description", "")
+            )
 
-        for article in self._fetch_newsapi(search_query):
-            best_score = 0.0
-            for candidate in candidate_inputs:
-                score = self._score_article(
-                    candidate,
-                    article.get("title", ""),
-                    article.get("description", "")
-                )
-                best_score = max(best_score, score)
-
-            if best_score >= self.similarity_threshold:
+            if score >= self.similarity_threshold:
                 results.append({
                     "source": "NewsAPI",
-                    "score": float(best_score),
+                    "score": float(score),
                     "title": article["title"],
                     "url": article["url"]
                 })
@@ -227,4 +229,9 @@ class NewsMatcher:
         final_results = list(unique.values())
         final_results.sort(key=lambda x: x["score"], reverse=True)
 
-        return final_results[:self.top_n]
+
+        top_results = final_results[:self.top_n]
+
+        # Save compact results to Firestore and publish event
+
+        return top_results

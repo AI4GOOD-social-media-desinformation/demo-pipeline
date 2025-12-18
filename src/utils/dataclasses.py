@@ -18,5 +18,6 @@ class FirestoreObject:
     context: str
     analysisMessage: list[str]
     newsMessage: list[str]
+    news: list[dict] | None = None
     probVideoFake: float| None = None
     probAudioFake: float|None = None

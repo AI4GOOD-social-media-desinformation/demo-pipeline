@@ -16,4 +16,5 @@ class FirestoreObject:
     videoText: str
     claim: str
     context: str
-    message: str
+    analysisMessage: list[str]
+    newsMessage: list[str]

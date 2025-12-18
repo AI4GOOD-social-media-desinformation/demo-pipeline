@@ -43,7 +43,8 @@ def save_event_to_firestore(sender_id, url, reel_video_id, text, doc_id=None):
         videoText=text,
         claim="",
         context="",
-        message=""
+        analysisMessage=[],
+        newsMessage=[],
     )
 
     db = firestore.Client(project="gen-lang-client-0915299548", database="ai4good")

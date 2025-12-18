@@ -229,7 +229,8 @@ class GeminiClaimExtraction:
             videoText=event_data["data"].get("videoText"),
             claim=analysis_results["claim"],
             context=analysis_results["summary"],
-            message=""
+            analysisMessage=[],
+            newsMessage=[],
         )
         
         # Step 4: Save to Firestore

@@ -11,7 +11,7 @@ def main():
             "userId": "17841405857678291",
             "claim": "",
             "context": "",
-            "message": ""
+            "analysisMessage": ""
         }
     }
 

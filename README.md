@@ -69,13 +69,13 @@ The Flask application provides the following endpoints:
 ### `POST /test`
 - **Purpose**: Debug endpoint for testing webhook payloads
 - **Behavior**: Echoes received JSON to console, returns success response
-- **Returns**: `{"message": "Test received successfully", "data": <received_data>}`
+- **Returns**: `{"analysisMessage": "Test received successfully", "data": <received_data>}`
 - **Useful for**: Testing webhook payload structure without triggering full pipeline
 
 ### `POST /testPipeline`
 - **Purpose**: Manual pipeline testing endpoint
 - **Behavior**: Runs DatasetCloudPipeline on hardcoded video ID `C5tBt-0IEEy`
-- **Returns**: `{"message": "Pipeline request received successfully"}`
+- **Returns**: `{"analysisMessage": "Pipeline request received successfully"}`
 - **Note**: For testing only; modify the code to test different videos
 
 ## Running the Flask Server

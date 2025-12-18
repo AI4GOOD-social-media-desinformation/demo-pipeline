@@ -83,7 +83,8 @@ class ReelsDownloader:
                 videoText=event_data["data"].get("videoText"),
                 claim="",
                 context="",
-                message=""
+                analysisMessage=[],
+                newsMessage=[],
             )
             # Save to Firestore
             self.db.collection("requests").document(request_id).set(firebase_object.__dict__)

@@ -56,7 +56,8 @@ class LocalDatasetFirestore:
             videoText=data.videoText,
             claim="",
             context="",
-            message=""
+            analysisMessage=[],
+            newsMessage=[],
         )
 
         

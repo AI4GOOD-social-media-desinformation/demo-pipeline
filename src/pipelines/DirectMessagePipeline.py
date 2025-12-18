@@ -2,6 +2,7 @@
 from src.eventbus.InMemoryEventBus import InMemoryEventBus
 from src.modules.ReelsDonwloader import ReelsDownloader
 from src.modules.GeminiClaimExtraction import GeminiClaimExtraction
+from src.modules.ProcessingMessageSender import ProcessingMessageSender
 
 
 class DirectMessagePipeline:
@@ -13,9 +14,11 @@ class DirectMessagePipeline:
         self.event_bus = InMemoryEventBus()
         self.storage_service = ReelsDownloader(saving_dir=saving_dir)
         self.claim_extraction_module = GeminiClaimExtraction()
+        self.processing_message_sender = ProcessingMessageSender()
         self.add_event_subscriptions()
         self.claim_extraction_module.set_eventbus(self.event_bus)
         self.storage_service.set_eventbus(self.event_bus)
+        self.processing_message_sender.set_eventbus(self.event_bus)
     
     def add_event_subscriptions(self):
         """Subscribe event handlers to the event bus."""
@@ -23,7 +26,9 @@ class DirectMessagePipeline:
             "reels_download.completed": self.claim_extraction_module.run,
             "claim_extraction.completed": self.on_success,
             "claim_extraction.failed": self.on_error,
-            "storage_service.failed": self.on_error,        }
+            "storage_service.failed": self.on_error,
+
+        }
         
         for topic, handler in handlers.items():
             self.event_bus.subscribe(topic, handler)
@@ -56,17 +61,8 @@ class DirectMessagePipeline:
         print("DATASET CLOUD PIPELINE: Upload Dataset to Firestore")
         print("="*70 + "\n")
 
-        
-
-        videoUrl = data.get("data", {}).get("videoUrl")
-        request_id = data.get("id")
-        self.storage_service.run({
-            "data": {
-                "videoUrl": videoUrl,
-            },
-            "id": request_id
-        })
-
+        self.processing_message_sender.run(event_data=data)
+        self.storage_service.run(event_data=data)
 
 
 

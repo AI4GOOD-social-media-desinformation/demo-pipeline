@@ -200,7 +200,6 @@ class GeminiClaimExtraction:
         """
 
         self.sanity_check_event_data(event_data)
-        print(f"DEBUG: Event Data at GeminiClaimExtraction: {event_data}")
 
         # Set default prompts if not provided
         summarization_prompt = """

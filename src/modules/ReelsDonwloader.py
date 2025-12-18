@@ -58,7 +58,6 @@ class ReelsDownloader:
             event_data: Dictionary containing 'video_url' key with the reel URL.
 
         """
-        print(f"DEBUG: Event Data at ReelsDownloader: {event_data}")
         if not self._sanity_check(event_data):
             raise ValueError("Sanity check failed for event data.")
 

@@ -129,6 +129,7 @@ def receive_webhook():
                     # Use stable IDs to prevent duplicate processing for the same reel/message.
                     request_id = message.get('mid') or reel_video_id or str(uuid.uuid4())
                     event_data = save_event_to_firestore(sender_id, url, reel_video_id, text, doc_id=request_id)
+                    print(event_data)
                     if not event_data:
                         continue
 

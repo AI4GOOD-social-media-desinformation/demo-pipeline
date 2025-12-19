@@ -38,7 +38,7 @@ class DisinformationAnalysis:
             project_id: str = "gen-lang-client-0915299548",
             database: str = "ai4good",
             eventbus: InMemoryEventBus | None = None,
-            n_subclaims: int = 3,
+            n_subclaims: int = 2,
         ) -> None:
         """
         Initialize DisinformationAnalysis with Firestore credentials.
@@ -266,15 +266,22 @@ class DisinformationAnalysis:
 
         prompt = f"""
         Você é um especialista em comunicação de desinformação.
-        Dado o seguinte conjunto de sub-afirmações verificadas e notícias relacionadas, resuma as justificativas em mensagens curtas e objetivas para envio para o usuário.
+        Dado um conjunto de sub-afirmações verificadas e notícias relacionadas, você deverá apresentar uma resumo conciso para o usuário final.
         Mantenha um tom neutro e cético e forneça apenas fatos e evidências relevantes, evitando julgamentos ou opiniões pessoais.
 
-        {'\n'.join(sub_claims_text)}
+        \n\n{''.join(sub_claims_text)}\n\n
 
-        Após analisar as justificativas, gere um resumo compacto sobre a veracidade da afirmação original, destacando os pontos principais de suporte ou refutação:
-        {claim}
+        Forma de Resposta:
+        1. Indique o nível de risco de desingomarção (ALTO, MÉDIO ou BAIXO), em negrito
+        2. Apresente as TOP 2 evidências que suportam essa conclusão
 
-        Formate em texto simples, cada mensagem em uma linha separada, com no máximo 500 caracteres cada.
+        O retorno deve ser EXATAMENTE neste formato em português (sem texto extra, sem JSON):
+
+        Risco: <texto curto>
+        Evidencia 1: <texto curto>
+        Evidencia 2: <texto curto>
+
+
         """
 
         response = self.client.models.generate_content(
@@ -313,8 +320,7 @@ class DisinformationAnalysis:
         Evidencia 1: <texto curto>
         Evidencia 2: <texto curto>
 
-        Se alguma evidência não existir, use "N/A" no lugar do texto. Mantenha as evidências
-        objetivas e com no máximo 500 caracteres cada.
+        Se alguma evidência não existir, use "N/A" no lugar do texto. Mantenha as evidências com no máximo 600 caracteres cada.
 
         Afirmação: {claim}
         Contexto: {context}
@@ -427,19 +433,21 @@ class DisinformationAnalysis:
             # Step 4: Summarize justifications
             logger.debug("Summarizing justifications...")
             start = time()
-            messages = self.summarize_justifications(subclaims, news)
+            messages = self.summarize_justifications(claim, subclaims, news)
             logger.debug(f"Summarized justifications in {time() - start:.2f} seconds.")
 
             # DANIEL: A partir daqui não tinha certeza como continuar a integração com o Firestore e o eventbus
             # # Step 5: Add messages to event data
             event_data["data"]["analysisMessage"] = "\n".join(messages)
             event_data["data"]["messages"] = messages
+            event_data["data"]["news"] = news
 
             # Step 6: Update Firestore document with analysis message
             try:
                 self.db.collection('requests').document(event_data["id"]).update({
                     "analysisMessage": event_data["data"]["analysisMessage"],
                     "messages": messages,
+                    "news": news,
                 })
             except Exception as e:
                 print(f"Error updating Firestore with ID: {event_data['id']}, error: {e}")

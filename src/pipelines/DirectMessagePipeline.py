@@ -6,6 +6,7 @@ from src.modules.DisinformationAnalysis import DisinformationAnalysis
 from src.modules.DeepfakeDetectorPipeline import DeepfakeDetectorPipeline
 from src.modules.ProcessingMessageSender import ProcessingMessageSender
 from src.modules.AnalysisMessageSender import AnalysisMessageSender
+from src.modules.RelatedNewsFilter import RelatedNewsFilter
 
 
 class DirectMessagePipeline:
@@ -21,6 +22,7 @@ class DirectMessagePipeline:
         self.disinformation_analysis_module = DisinformationAnalysis()
         self.processing_message_sender = ProcessingMessageSender()
         self.analysis_message_sender = AnalysisMessageSender()
+        self.related_news_filter = RelatedNewsFilter()
         self.add_event_subscriptions()
         self.claim_extraction_module.set_eventbus(self.event_bus)
         self.deepfake_detector_module.set_eventbus(self.event_bus)
@@ -28,6 +30,7 @@ class DirectMessagePipeline:
         self.storage_service.set_eventbus(self.event_bus)
         self.processing_message_sender.set_eventbus(self.event_bus)
         self.analysis_message_sender.set_eventbus(self.event_bus)
+        self.related_news_filter.set_eventbus(self.event_bus)
     
     def add_event_subscriptions(self):
         """Subscribe event handlers to the event bus."""
@@ -36,10 +39,12 @@ class DirectMessagePipeline:
             ("claim_extraction.completed", self.deepfake_detector_module.run),
             ("deepfake_detection.completed", self.disinformation_analysis_module.run),
             ("disinformation_analysis.completed", self.analysis_message_sender.run),
+            ("analysis_message_sender.completed", self.related_news_filter.run),
             ("claim_extraction.failed", self.on_error),
             ("deepfake_detection.failed", self.on_error),
             ("disinformation_analysis.failed", self.on_error),
             ("storage_service.failed", self.on_error),
+            ("related_news_filter.failed", self.on_error),
         ]
 
         for topic, handler in subscriptions:

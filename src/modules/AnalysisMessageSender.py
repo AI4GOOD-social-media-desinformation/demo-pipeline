@@ -69,7 +69,11 @@ class AnalysisMessageSender:
 
             if self.eventbus:
                 self.eventbus.publish(
-                    "analysis_message.completed", {"id": event_data.get("id")}
+                    "analysis_message_sender.completed", 
+                    {
+                        "id": event_data.get("id"),
+                        "data": event_data.get("data", {})
+                    }
                 )
         except requests.exceptions.RequestException as e:
             print("Error sending final message:", e)

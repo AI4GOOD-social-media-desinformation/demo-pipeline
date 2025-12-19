@@ -9,7 +9,9 @@ gcloud auth application-default login
 
 ```
 
-**Add yout  GOOGLE_API_KEY to .env file for using google services**
+**Add your GOOGLE_API_KEY to .env file for using google services**
+
+**Add INSTAGRAM_ACCESS_TOKEN to .env file to enable sending Instagram Direct Messages**
 
 This will install the required dependencies and the package in editable mode.
 
@@ -91,14 +93,10 @@ The server runs on `http://localhost:5000`
 To expose it publicly for Instagram webhooks, use Cloudflare Tunnel:
 
 ```bash
-cloudflared tunnel --url http://localhost:5000
+cloudflared tunnel run --token $CLOUDFARE_TUNNELING_TOKEN```
 ```
-
 This will provide a public HTTPS URL to configure in the Instagram Developer Console.
 
-## Running Examples
-
-This project includes example scripts demonstrating how to use the pipeline modules. All examples are located in the `examples/` directory.
 
 ### Prerequisites
 
@@ -106,83 +104,49 @@ Before running any examples, ensure you have:
 1. Installed the package: `pip install -e .`
 2. Set up Google Cloud authentication: `gcloud auth application-default login`
 3. Added your `GOOGLE_API_KEY` to a `.env` file for Google services
+4. Added your `INSTAGRAM_ACCESS_TOKEN` to the `.env` file to enable sending Instagram Direct Messages
+5. Added your `INSTAGRAM_VERIFY_TOKEN` to the `.env` file for webhook verification
+6. Added your `CLOUDFARE_TUNNELING_TOKEN` to the `.env` file for Cloudflare Tunnel
 
-### Example 1: Claim Extraction Pipeline
+### Direct Message Pipeline
 
-**File**: `examples/test_claim_extraction_pipeline.py`
-
-**Description**: Tests the claim extraction module by processing videos and extracting claims using Google Gemini AI. This example demonstrates how to use the GeminiClaimExtraction module to analyze video content and extract factual claims.
-
-**Usage**:
-```bash
-cd examples
-python test_claim_extraction_pipeline.py
-```
 
 **What it does**:
-- Loads video files from the `data/socialdf/socialdf_vids` directory
-- Processes videos with specified IDs (default: `DELIpWZN3tU`)
-- Extracts claims from video content using the Gemini API
-- Saves results to Firestore database
-- Displays processing progress and status updates
+- Downloads Instagram reels from the provided video URL
+- Extracts claims from the video content using Gemini API
+- Runs deepfake detection on the video
+- Performs disinformation analysis on detected claims
+- Sends processing status messages to the user via Instagram DM
+- Sends final analysis results back to the user via Instagram DM
+- Filters and provides related news articles
+- Uses event-driven architecture to coordinate all modules
+
+**Event Flow**:
+1. `reels_download.completed` → triggers claim extraction
+2. `claim_extraction.completed` → triggers deepfake detection
+3. `deepfake_detection.completed` → triggers disinformation analysis
+4. `disinformation_analysis.completed` → triggers analysis message sender
+5. `analysis_message_sender.completed` → triggers related news filtering
+
+**Required Environment Variables**:
+- `GOOGLE_API_KEY`: For Gemini claim extraction
+- `INSTAGRAM_ACCESS_TOKEN`: For sending direct messages back to users
 
 **Expected Output**:
 ```
-================================================================================
-Testing ClaimExtraction Pipeline
-================================================================================
+======================================================================
+DATASET CLOUD PIPELINE: Upload Dataset to Firestore
+======================================================================
 
-[Processing] Video ID: DELIpWZN3tU
---------------------------------------------------------------------------------
+[Processing] Sending processing message to user...
+[Download] Downloading reel from URL...
 [Claim Extraction] Processing video...
-[Result] Claims extracted and saved to Firestore
-Video ID: DELIpWZN3tU - Status: Success
-
-================================================================================
-Pipeline Test Complete
-================================================================================
-```
-
-### Example 2: Dataset Cloud Pipeline
-
-**File**: `examples/pipeline_saving_dataset_cloud.py`
-
-**Description**: Demonstrates how to run the full pipeline that processes videos and saves the dataset to cloud storage (Firestore). This is the main production pipeline for processing multiple videos in batch.
-
-**Usage**:
-```bash
-cd examples
-python pipeline_saving_dataset_cloud.py
-```
-
-**What it does**:
-- Loads video data from the `data/socialdf/socialdf_vids` directory
-- Processes multiple videos in sequence (default IDs: `C5tBt-0IEEy`, `C96nZIGIb_v`)
-- Saves processed data and claims to Firestore
-- Handles event-driven architecture through the InMemoryEventBus
-- Logs all processing stages
-
-**Expected Output**:
-```
-Dataset Cloud Pipeline Processing:
-Processing video ID: C5tBt-0IEEy
-  - Video loaded successfully
-  - Claims extracted: [list of claims]
-  - Data saved to Firestore
-Processing video ID: C96nZIGIb_v
-  - Video loaded successfully
-  - Claims extracted: [list of claims]
-  - Data saved to Firestore
+[Deepfake Detection] Analyzing video for deepfake indicators...
+[Disinformation Analysis] Analyzing claims...
+[Messaging] Sending analysis results to user via Instagram DM...
+[News Filter] Finding related news articles...
 Pipeline completed successfully
 ```
-
-### Running Custom Examples
-
-To run examples with your own video data:
-
-1. Place your videos in `data/socialdf/socialdf_vids/vids/<video_id>/` directory
-2. Modify the `ids` list in the example script with your video IDs
-3. Run the example script as shown above
 
 ### Troubleshooting
 

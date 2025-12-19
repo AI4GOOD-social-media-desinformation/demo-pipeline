@@ -1,3 +1,7 @@
+from typing import Any
+from collections.abc import Generator, Iterable
+from typing_extensions import TypedDict
+
 from gnews import GNews
 from newsapi import NewsApiClient
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -148,19 +152,40 @@ class NewsMatcher:
 
         return refined
 
-    def _fetch_gnews(self, query):
-        return self.gnews.get_news(query)
+    def _fetch_news(self, query: str) -> Generator[dict[str, Any], None, None]:
+        """
+        Fetch news articles from multiple sources.
+        Yields articles as dictionaries with keys: title, description, url.
+        """
+        gnews_articles = self.gnews.get_news(query)
 
-    def _fetch_newsapi(self, query):
-        response = self.newsapi.get_everything(
+        if gnews_articles:
+            for article in gnews_articles:
+                yield {
+                    "source": "GNews",
+                    "publisher": article.get("publisher", {}).get("title", ""),
+                    "date": article.get("published date", ""),
+                    "title": article.get("title", ""),
+                    "description": article.get("description", ""),
+                    "url": article.get("url", "")
+                }
+        
+        newsapi_response = self.newsapi.get_everything(
             q=query,
             language="pt",
             page_size=self.max_results,
             sort_by="relevancy"
         )
-        return response.get("articles", [])
 
-    def _score_article(self, input_sentence, title, description):
+        for article in newsapi_response.get("articles", []):
+            yield {
+                "source": "NewsAPI",
+                "title": article.get("title", ""),
+                "description": article.get("description", ""),
+                "url": article.get("url", "")
+            }
+
+    def _score_article(self, input_sentence: str, title: str, description: str) -> float:
         full_text = self._normalize(f"{title}. {description}")
         sentences = self._split_sentences(full_text)
 
@@ -184,54 +209,37 @@ class NewsMatcher:
         return similarities.max()
 
 
-    def run(self, query: str) -> list[dict]:
+    def run(self, queries: Iterable[str]) -> list[dict[str, Any]]:
         """
         Returns a list of similar news articles.
         Returns empty list if nothing is relevant enough.
         """
+        
+        results: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
 
-        # Validate incoming event and environment
+        for query in queries:
+            for article in self._fetch_news(query):
+                url = article["url"]
 
-        results = []
-        for article in self._fetch_gnews(query):
-            score = self._score_article(
-                query,
-                article.get("title", ""),
-                article.get("description", "")
-            )
+                if not url or url in seen_urls: continue
+                    
+                score = self._score_article(
+                    query,
+                    article.get("title", ""),
+                    article.get("description", "")
+                )
 
-            if score >= self.similarity_threshold:
-                results.append({
-                    "source": "GNews",
-                    "score": float(score),
-                    "title": article["title"],
-                    "url": article["url"]
-                })
-        for article in self._fetch_newsapi(query):
-            score = self._score_article(
-                query,
-                article.get("title", ""),
-                article.get("description", "")
-            )
-
-            if score >= self.similarity_threshold:
-                results.append({
-                    "source": "NewsAPI",
-                    "score": float(score),
-                    "title": article["title"],
-                    "url": article["url"]
-                })
-
-        unique = {}
-        for r in results:
-            unique[r["url"]] = r
-
-        final_results = list(unique.values())
-        final_results.sort(key=lambda x: x["score"], reverse=True)
-
-
-        top_results = final_results[:self.top_n]
-
-        # Save compact results to Firestore and publish event
-
-        return top_results
+                if score >= self.similarity_threshold:
+                    seen_urls.add(url)
+                    results.append({
+                        "source": article["source"],
+                        "score": float(score),
+                        "title": article["title"],
+                        "url": url,
+                        "query": query,
+                        "description": article["description"]
+                    })
+            
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:self.top_n]
